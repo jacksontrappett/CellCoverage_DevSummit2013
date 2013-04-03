@@ -17,9 +17,7 @@
 @property (nonatomic, strong) IBOutlet UIImageView *imageView;
 @property (nonatomic, strong) IBOutlet UIActivityIndicatorView *activityIndicator;
 @property (nonatomic, strong) UIImage *image;
-@property (nonatomic, assign) BOOL isDownloading;
-@property (nonatomic, strong) NSMutableData *activeDownload;
-@property (nonatomic, strong) NSURLConnection *imageConnection;
+@property (nonatomic, strong) AGSRequestOperation *operation;
 
 - (void)startDownload;
 
@@ -29,10 +27,8 @@
 
 -(void)dealloc {
 
-    [self.imageConnection cancel];
-    self.imageConnection = nil;
-    self.activeDownload = nil;
-    self.isDownloading = NO;
+    [self.operation cancel];
+    self.operation = nil;
 }
 
 - (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil
@@ -68,7 +64,7 @@
 - (void)startDownload {
     
     //no need to download again if we are already in the process
-    if (self.isDownloading)
+    if (self.operation)
         return;
     
     //If there is a source url string, start the download process.
@@ -76,53 +72,41 @@
     //The image will load asynchronously, displaying an activity indicator while it's loading
     if (self.imageUrlString.length > 0)
     {
-        self.activeDownload = [NSMutableData data];
-        
-        NSURLRequest *req = [NSURLRequest requestWithURL:[NSURL URLWithString:self.imageUrlString]];
-        self.imageConnection = [NSURLConnection connectionWithRequest:req delegate:self];
-        
-        self.isDownloading = YES;
         self.activityIndicator.hidden = NO;
+
+        self.operation = [[AGSRequestOperation alloc] initWithURL:[NSURL URLWithString:self.imageUrlString]];
+        self.operation.target = self;
+        self.operation.action = @selector(imageRequestOperation:didComplete:);
+        self.operation.errorAction = @selector(imageRequestOperation:didFailWithError:);
+        [[AGSRequestOperation sharedOperationQueue] addOperation:self.operation];
     }
 }
 
 #pragma mark -
-#pragma mark Download support (NSURLConnectionDelegate)
+#pragma mark Download support (AGSOperation)
 
-- (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data
-{
-    [self.activeDownload appendData:data];
-}
-
-- (void)connectionDidFinishLoading:(NSURLConnection *)connection
-{
-    //hide activity indicator
+- (void)imageRequestOperation:(NSOperation*)op didComplete:(NSData *)data {
     self.activityIndicator.hidden = YES;
-
+    
     //create image
-    self.image = [[UIImage alloc] initWithData:self.activeDownload];
+    self.image = [[UIImage alloc] initWithData:data];
+    if (!self.image) {
+        NSLog(@"Elevation Profile image request succeeded, but no image :-(");
+    }
     self.imageView.image = self.image;
     
     // Release the connection now that it's finished and clean up
-    self.imageConnection = nil;
-    self.activeDownload = nil;
-    self.isDownloading = NO;
+    self.operation = nil;
 }
 
-- (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error
-{
+- (void)imageRequestOperation:(NSOperation*)op didFailWithError:(NSError *)error {
+
     //hide activity indicator
     self.activityIndicator.hidden = YES;
-    
 	self.image = nil;
-	
-	// Clear the activeDownload property to allow later attempts
-    self.activeDownload = nil;
+    self.operation = nil;
     
-    // Release the connection now that it's finished
-    self.imageConnection = nil;
-    
-    self.isDownloading = NO;
+    NSLog(@"Elevation Profile image request failed because %@", error.localizedDescription);
 }
 
 @end
